@@ -8,58 +8,67 @@
 #include <thread>
 #include <vector>
 #include <random>
-#include <mutex>
 #include <shared_mutex>
+#include <mutex>
+#include <condition_variable>
 
 int carId = 0;
 int shortSize, longSize, shortStart, shortEnd, longStart, longEnd;
 bool running = true, ready = false;
+bool dir1, dir2, dir3, dir4;
 
+std::condition_variable cv1, cv2, cv3, cv4;
 std::mutex mtx1;
 std::mutex mtx2;
 std::mutex mtx3;
 std::mutex mtx4;
-std::shared_mutex sh_mtx1;
-std::shared_mutex sh_mtx2;
-std::shared_mutex sh_mtx3;
-std::shared_mutex sh_mtx4;
+std::mutex m1;
+std::mutex m2;
+std::mutex m3;
+std::mutex m4;
+
+void changeDir(std::mutex* m, std::condition_variable* cv, bool* direction){
+    std::lock_guard lk(*m);
+
+    *direction = !*direction;
+    cv->notify_all();
+}
+
+void runChangeDir(std::mutex* m, std::condition_variable* cv, bool* direction){
+    std::random_device rd;
+    std::mt19937 mt(rd());
+    std::uniform_int_distribution<int> sleepDist(2000, 3000);
+    while (running){
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepDist(mt)));
+        changeDir(m, cv, direction);
+    }
+}
 
 class Crossroad{
     bool taken{};
     int carId{};
-    bool direction{};
+private:
     int id{};
     std::mutex* mtx;
-    std::shared_mutex* sh_mtx;
 
 public:
 
     explicit Crossroad(int id){
         this->id = id;
-        direction = true;
         switch (this->id){
             case 0:
                 mtx = &mtx1;
-                sh_mtx = &sh_mtx1;
                 break;
             case 1:
                 mtx = &mtx2;
-                sh_mtx = &sh_mtx2;
                 break;
             case 2:
                 mtx = &mtx3;
-                sh_mtx = &sh_mtx3;
                 break;
             case 3:
                 mtx = &mtx4;
-                sh_mtx = &sh_mtx4;
                 break;
         }
-    }
-
-    bool checkDirection(bool constant){
-        std::shared_lock<std::shared_mutex> lock(*sh_mtx);
-        return constant == direction;
     }
 
     void getIntoCrossroad(int carI){
@@ -73,26 +82,6 @@ public:
         taken = false;
 
         mtx->unlock();
-    }
-
-    void changeDirection() {
-        std::unique_lock<std::shared_mutex> lock(*sh_mtx);
-        direction = !direction;
-    }
-
-    void run(){
-        while (running){
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            changeDirection();
-            if (direction)
-                mvprintw(0, 0, "true");
-            else
-                mvprintw(0, 0, "false");
-        }
-    }
-
-    std::thread crossThread(){
-        return std::thread(&Crossroad::run, this);
     }
 };
 
@@ -117,97 +106,81 @@ public:
                 int nextCol = 0;
                 if (rowPos == longStart){
                     if (colPos == shortEnd - 1){
-//                        colPos = shortEnd;
                         nextCol = shortEnd;
-//                        rowPos = longStart + 1;
                         nextRow = longStart + 1;
                     } else {
-//                        colPos++;
                         nextCol = colPos + 1;
                         nextRow = rowPos;
                     }
                 } else if (colPos == shortEnd){
                     if (rowPos == longEnd - 1){
-//                        rowPos = longEnd;
                         nextRow = longEnd;
-//                        colPos = shortEnd - 1;
                         nextCol = shortEnd - 1;
                     } else {
-//                        rowPos++;
                         nextRow = rowPos + 1;
                         nextCol = colPos;
                     }
                 } else if (rowPos == longEnd){
                     if (colPos == shortStart + 1) {
-//                        colPos = shortStart;
                         nextCol = shortStart;
-//                        rowPos = longEnd - 1;
                         nextRow = longEnd - 1;
                     } else {
-//                        colPos--;
                         nextCol = colPos - 1;
                         nextRow = rowPos;
                     }
                 } else if (colPos == shortStart){
                     if (rowPos == longStart + 1) {
-//                        rowPos = longStart;
                         nextRow = longStart;
-//                        colPos = shortStart + 1;
                         nextCol = shortStart + 1;
                     } else {
-//                        rowPos--;
                         nextRow = rowPos - 1;
                         nextCol = colPos;
                     }
                 }
                 if (nextRow == shortStart){
                     if (nextCol == shortStart){
-                        if (crossroads[0].checkDirection(constant))
+                        if (dir1 == constant)
                             crossroads[0].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m1);
+                            cv1.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (crossroads[2].checkDirection(constant))
+                        if (dir3 == constant)
                             crossroads[2].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m3);
+                            cv3.wait(lk);
+                        }
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
-                        if (crossroads[1].checkDirection(constant))
+                        if (dir2 == constant)
                             crossroads[1].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m2);
+                            cv2.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (crossroads[3].checkDirection(constant))
+                        if (dir4 == constant)
                             crossroads[3].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m4);
+                            cv4.wait(lk);
+                        }
                     }
                 }
                 if (rowPos == shortStart){
                     if (colPos == shortStart){
-                        if (crossroads[0].checkDirection(constant))
-                            crossroads[0].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[0].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        if (crossroads[2].checkDirection(constant))
-                            crossroads[2].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[2].leaveCrossroad();
                     }
                 } else if (rowPos == shortEnd){
                     if (colPos == shortStart){
-                        if (crossroads[1].checkDirection(constant))
-                            crossroads[1].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[1].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        if (crossroads[3].checkDirection(constant))
-                            crossroads[3].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[3].leaveCrossroad();
                     }
                 }
                 colPos = nextCol;
@@ -224,23 +197,17 @@ public:
                 int nextCol = 0;
                 if (rowPos == shortStart) {
                     if (colPos == longEnd - 1) {
-//                        colPos = longEnd;
                         nextCol = longEnd;
-//                        rowPos = shortStart + 1;
                         nextRow = shortStart + 1;
                     } else {
-//                        colPos++;
                         nextCol = colPos + 1;
                         nextRow = rowPos;
                     }
                 } else if (colPos == longEnd) {
                     if (rowPos == shortEnd - 1) {
-//                        rowPos = shortEnd;
                         nextRow = shortEnd;
-//                        colPos = longEnd - 1;
                         nextCol = longEnd - 1;
                     } else {
-//                        rowPos++;
                         nextRow = rowPos + 1;
                         nextCol = colPos;
                     }
@@ -250,76 +217,66 @@ public:
                             onTrack = false;
                             break;
                         }
-//                        colPos = longStart;
                         nextCol = longStart;
-//                        rowPos = shortEnd - 1;
                         nextRow = shortEnd - 1;
                     } else {
-//                        colPos--;
                         nextCol = colPos - 1;
                         nextRow = rowPos;
                     }
                 } else if (colPos == longStart) {
                     if (rowPos == shortStart + 1) {
-//                        rowPos = shortStart;
                         nextRow = shortStart;
-//                        colPos = longStart + 1;
                         nextCol = longStart + 1;
                         lap++;
                     } else {
-//                        rowPos--;
                         nextRow = rowPos - 1;
                         nextCol = colPos;
                     }
                 }
                 if (nextRow == shortStart){
                     if (nextCol == shortStart){
-                        if (crossroads[0].checkDirection(constant))
+                        if (dir1 == constant)
                             crossroads[0].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m1);
+                            cv1.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (crossroads[1].checkDirection(constant))
+                        if (dir2 == constant)
                             crossroads[1].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m2);
+                            cv2.wait(lk);
+                        }
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
-                        if (crossroads[2].checkDirection(constant))
+                        if (dir3 == constant)
                             crossroads[2].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m3);
+                            cv3.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (crossroads[3].checkDirection(constant))
+                        if (dir4 == constant)
                             crossroads[3].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m4);
+                            cv4.wait(lk);
+                        }
                     }
                 }
                 if (rowPos == shortStart){
                     if (colPos == shortStart){
-                        if (crossroads[0].checkDirection(constant))
-                            crossroads[0].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[0].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        if (crossroads[1].checkDirection(constant))
-                            crossroads[1].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[1].leaveCrossroad();
                     }
                 } else if (rowPos == shortEnd){
                     if (colPos == shortStart){
-                        if (crossroads[2].checkDirection(constant))
-                            crossroads[2].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[2].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        if (crossroads[3].checkDirection(constant))
-                            crossroads[3].leaveCrossroad();
-                        else
-                            continue;
+                        crossroads[3].leaveCrossroad();
                     }
                 }
                 rowPos = nextRow;
@@ -366,22 +323,14 @@ void redraw(){
             mvprintw(shortStart, i, "-");
             mvprintw(shortEnd, i, "-");
         }
-        if (crossroads[0].checkDirection(true))
-            mvprintw(shortStart, shortStart, "|");
-        else
-            mvprintw(shortStart, shortStart, "-");
-        if (crossroads[1].checkDirection(true))
-            mvprintw(shortStart, shortEnd, "|");
-        else
-            mvprintw(shortStart, shortEnd, "-");
-        if (crossroads[2].checkDirection(true))
-            mvprintw(shortEnd, shortStart, "|");
-        else
-            mvprintw(shortEnd, shortStart, "-");
-        if (crossroads[3].checkDirection(true))
-            mvprintw(shortEnd, shortEnd, "|");
-        else
-            mvprintw(shortEnd, shortEnd, "-");
+        if (dir1) mvprintw(shortStart, shortStart, "|");
+        else mvprintw(shortStart, shortStart, "-");
+        if (dir2) mvprintw(shortStart, shortEnd, "|");
+        else mvprintw(shortStart, shortEnd, "-");
+        if (dir3) mvprintw(shortEnd, shortStart, "|");
+        else mvprintw(shortEnd, shortStart, "-");
+        if (dir4) mvprintw(shortEnd, shortEnd, "|");
+        else mvprintw(shortEnd, shortEnd, "-");
         for (Car2 car: cars) {
             if (car.onTrack) {
                 char c = (char) (car.id + 65);
@@ -479,8 +428,8 @@ int main() {
     initscr();
     int screenRows, screenColumns;
     getmaxyx(stdscr, screenRows, screenColumns);
-    shortSize = 6;
-    longSize = 13;
+    shortSize = 6+5;
+    longSize = 13+5;
     shortStart = (longSize - shortSize)/2;
     shortEnd = shortStart + shortSize;
     longStart = 0;
@@ -490,23 +439,23 @@ int main() {
         std::cout << "Okno jest zbyt małe\n";
         return 0;
     }
-    std::vector<std::thread> c_threads;
     for (int i = 0; i < 4; i++){
         Crossroad c(i);
         crossroads.push_back(c);
     }
-    c_threads.reserve(crossroads.size());
-    for (auto c : crossroads){
-        c_threads.emplace_back(c.crossThread());
-    }
+    std::thread cross1(runChangeDir, &m1, &cv1, &dir1);
+    std::thread cross2(runChangeDir, &m2, &cv2, &dir2);
+    std::thread cross3(runChangeDir, &m3, &cv3, &dir3);
+    std::thread cross4(runChangeDir, &m4, &cv4, &dir4);
     std::thread drawThread(redraw);
     while (!ready) {}
     std::thread end(checkSpace);
     std::thread spawnerThread(spawnCars);
     end.join();
-    for (int i = 0; i < c_threads.size(); i++){
-        c_threads[i].join();
-    }
+    cross1.join();
+    cross2.join();
+    cross3.join();
+    cross4.join();
     spawnerThread.join();
     drawThread.join();
     endwin();
