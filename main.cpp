@@ -10,34 +10,37 @@
 #include <random>
 #include <shared_mutex>
 #include <mutex>
+#include <condition_variable>
 
 int carId = 0;
 int shortSize, longSize, shortStart, shortEnd, longStart, longEnd;
 bool running = true, ready = false;
-bool mainDirection = true;
+bool dir1, dir2, dir3, dir4;
 
+std::condition_variable cv1, cv2, cv3, cv4;
 std::mutex mtx1;
 std::mutex mtx2;
 std::mutex mtx3;
 std::mutex mtx4;
-std::shared_mutex main_mtx;
+std::mutex m1;
+std::mutex m2;
+std::mutex m3;
+std::mutex m4;
 
-bool checkDir(){
-    std::shared_lock<std::shared_mutex> lock(main_mtx);
-    mainDirection ? mvprintw(longEnd, longEnd, "true ") : mvprintw(longEnd, longEnd, "false");
-    return mainDirection;
+void changeDir(std::mutex* m, std::condition_variable* cv, bool* direction){
+    std::lock_guard lk(*m);
+
+    *direction = !*direction;
+    cv->notify_all();
 }
 
-void changeDir(){
-    std::unique_lock<std::shared_mutex> lock(main_mtx);
-    mainDirection = !mainDirection;
-    mainDirection ? mvprintw(0, longEnd, "true ") : mvprintw(0, longEnd, "false");
-}
-
-void runChangeDir(){
+void runChangeDir(std::mutex* m, std::condition_variable* cv, bool* direction){
+    std::random_device rd;
+    std::mt19937 mt(rd());
+    std::uniform_int_distribution<int> sleepDist(2000, 3000);
     while (running){
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-        changeDir();
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepDist(mt)));
+        changeDir(m, cv, direction);
     }
 }
 
@@ -136,27 +139,35 @@ public:
                 }
                 if (nextRow == shortStart){
                     if (nextCol == shortStart){
-                        if (checkDir() == constant)
+                        if (dir1 == constant)
                             crossroads[0].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m1);
+                            cv1.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (checkDir() == constant)
+                        if (dir3 == constant)
                             crossroads[2].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m3);
+                            cv3.wait(lk);
+                        }
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
-                        if (checkDir() == constant)
+                        if (dir2 == constant)
                             crossroads[1].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m2);
+                            cv2.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (checkDir() == constant)
+                        if (dir4 == constant)
                             crossroads[3].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m4);
+                            cv4.wait(lk);
+                        }
                     }
                 }
                 if (rowPos == shortStart){
@@ -224,27 +235,35 @@ public:
                 }
                 if (nextRow == shortStart){
                     if (nextCol == shortStart){
-                        if (checkDir() == constant)
+                        if (dir1 == constant)
                             crossroads[0].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m1);
+                            cv1.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (checkDir() == constant)
+                        if (dir2 == constant)
                             crossroads[1].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m2);
+                            cv2.wait(lk);
+                        }
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
-                        if (checkDir() == constant)
+                        if (dir3 == constant)
                             crossroads[2].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m3);
+                            cv3.wait(lk);
+                        }
                     } else if (nextCol == shortEnd){
-                        if (checkDir() == constant)
+                        if (dir4 == constant)
                             crossroads[3].getIntoCrossroad(id);
-                        else
-                            continue;
+                        else {
+                            std::unique_lock lk(m4);
+                            cv4.wait(lk);
+                        }
                     }
                 }
                 if (rowPos == shortStart){
@@ -304,18 +323,14 @@ void redraw(){
             mvprintw(shortStart, i, "-");
             mvprintw(shortEnd, i, "-");
         }
-        if (mainDirection) {
-            mvprintw(shortStart, shortStart, "|");
-            mvprintw(shortStart, shortEnd, "|");
-            mvprintw(shortEnd, shortStart, "|");
-            mvprintw(shortEnd, shortEnd, "|");
-        }
-        else {
-            mvprintw(shortStart, shortStart, "-");
-            mvprintw(shortStart, shortEnd, "-");
-            mvprintw(shortEnd, shortStart, "-");
-            mvprintw(shortEnd, shortEnd, "-");
-        }
+        if (dir1) mvprintw(shortStart, shortStart, "|");
+        else mvprintw(shortStart, shortStart, "-");
+        if (dir2) mvprintw(shortStart, shortEnd, "|");
+        else mvprintw(shortStart, shortEnd, "-");
+        if (dir3) mvprintw(shortEnd, shortStart, "|");
+        else mvprintw(shortEnd, shortStart, "-");
+        if (dir4) mvprintw(shortEnd, shortEnd, "|");
+        else mvprintw(shortEnd, shortEnd, "-");
         for (Car2 car: cars) {
             if (car.onTrack) {
                 char c = (char) (car.id + 65);
@@ -428,13 +443,19 @@ int main() {
         Crossroad c(i);
         crossroads.push_back(c);
     }
-    std::thread crossroad(runChangeDir);
+    std::thread cross1(runChangeDir, &m1, &cv1, &dir1);
+    std::thread cross2(runChangeDir, &m2, &cv2, &dir2);
+    std::thread cross3(runChangeDir, &m3, &cv3, &dir3);
+    std::thread cross4(runChangeDir, &m4, &cv4, &dir4);
     std::thread drawThread(redraw);
     while (!ready) {}
     std::thread end(checkSpace);
     std::thread spawnerThread(spawnCars);
     end.join();
-    crossroad.join();
+    cross1.join();
+    cross2.join();
+    cross3.join();
+    cross4.join();
     spawnerThread.join();
     drawThread.join();
     endwin();
