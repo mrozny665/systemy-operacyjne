@@ -1,6 +1,10 @@
 /*
+ * Etap 2
  * Zadaniem jest zaimplementowanie systemu "świateł drogowych" - przez dane skrzyżowanie mogą przejeżdżać pojazdy z
  * tylko jednego kierunku, po czasie kierunek się zmienia
+ *
+ * Etap 3
+ * Na dolnym odcinku poziomego toru nie może być więcej niż jeden pojazd
  */
 
 #include <iostream>
@@ -18,14 +22,8 @@ bool running = true, ready = false;
 bool dir1, dir2, dir3, dir4;
 
 std::condition_variable cv1, cv2, cv3, cv4;
-std::mutex mtx1;
-std::mutex mtx2;
-std::mutex mtx3;
-std::mutex mtx4;
-std::mutex m1;
-std::mutex m2;
-std::mutex m3;
-std::mutex m4;
+std::mutex mtx1, mtx2, mtx3, mtx4;
+std::mutex m1, m2, m3, m4;
 
 void changeDir(std::mutex* m, std::condition_variable* cv, bool* direction){
     std::lock_guard lk(*m);
@@ -87,7 +85,7 @@ public:
 
 std::vector<Crossroad> crossroads;
 
-class Car2{
+class Car{
 public:
     bool constant{};
     int id{};
@@ -139,35 +137,31 @@ public:
                 }
                 if (nextRow == shortStart){
                     if (nextCol == shortStart){
-                        if (dir1 == constant)
-                            crossroads[0].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m1);
+                        std::unique_lock lk(m1);
+                        while (dir1 != constant && running) {
                             cv1.wait(lk);
                         }
+                        crossroads[0].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
-                        if (dir3 == constant)
-                            crossroads[2].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m3);
+                        std::unique_lock lk(m3);
+                        while (dir3 != constant && running) {
                             cv3.wait(lk);
                         }
+                        crossroads[2].getIntoCrossroad(id);
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
-                        if (dir2 == constant)
-                            crossroads[1].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m2);
+                        std::unique_lock lk(m2);
+                        while (dir2 != constant && running) {
                             cv2.wait(lk);
                         }
+                        crossroads[1].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
-                        if (dir4 == constant)
-                            crossroads[3].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m4);
+                        std::unique_lock lk(m4);
+                        while (dir4 != constant && running) {
                             cv4.wait(lk);
                         }
+                        crossroads[3].getIntoCrossroad(id);
                     }
                 }
                 if (rowPos == shortStart){
@@ -235,35 +229,31 @@ public:
                 }
                 if (nextRow == shortStart){
                     if (nextCol == shortStart){
-                        if (dir1 == constant)
-                            crossroads[0].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m1);
+                        std::unique_lock lk(m1);
+                        while (dir1 != constant && running) {
                             cv1.wait(lk);
                         }
+                        crossroads[0].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
-                        if (dir2 == constant)
-                            crossroads[1].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m2);
+                        std::unique_lock lk(m2);
+                        while (dir2 != constant && running) {
                             cv2.wait(lk);
                         }
+                        crossroads[1].getIntoCrossroad(id);
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
-                        if (dir3 == constant)
-                            crossroads[2].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m3);
+                        std::unique_lock lk(m3);
+                        while (dir3 != constant && running) {
                             cv3.wait(lk);
                         }
+                        crossroads[2].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
-                        if (dir4 == constant)
-                            crossroads[3].getIntoCrossroad(id);
-                        else {
-                            std::unique_lock lk(m4);
+                        std::unique_lock lk(m4);
+                        while (dir4 != constant && running) {
                             cv4.wait(lk);
                         }
+                        crossroads[3].getIntoCrossroad(id);
                     }
                 }
                 if (rowPos == shortStart){
@@ -285,7 +275,7 @@ public:
         }
     }
 
-    Car2(bool constant, int id, int lap, int sleepTime, int colPos, int rowPos) {
+    Car(bool constant, int id, int lap, int sleepTime, int colPos, int rowPos) {
         this->constant = constant;
         this->id = id;
         this->lap = lap;
@@ -295,11 +285,11 @@ public:
     }
 
     std::thread carThread(){
-        return std::thread(&Car2::run, this);
+        return std::thread(&Car::run, this);
     }
 };
 
-std::vector<Car2> cars;
+std::vector<Car> cars;
 
 void redraw(){
     while (running) {
@@ -331,7 +321,7 @@ void redraw(){
         else mvprintw(shortEnd, shortStart, "-");
         if (dir4) mvprintw(shortEnd, shortEnd, "|");
         else mvprintw(shortEnd, shortEnd, "-");
-        for (Car2 car: cars) {
+        for (Car car: cars) {
             if (car.onTrack) {
                 char c = (char) (car.id + 65);
                 mvprintw(car.rowPos, car.colPos, "%c", c);
@@ -386,17 +376,17 @@ void spawnCars(){
     std::uniform_int_distribution<int> sleepDist(100, 300);
     std::uniform_int_distribution<int> delayDist(5, 10);
     auto position = generateInitialPosition();
-    Car2 car1(true, 0, 0, 500, position[0], position[1]);
+    Car car1(true, 0, 0, 500, position[0], position[1]);
     cars.emplace_back(car1);
     position = generateInitialPosition();
-    Car2 car2(true, 1, 0, 500, position[0], position[1]);
+    Car car2(true, 1, 0, 500, position[0], position[1]);
     cars.emplace_back(car2);
     position = generateInitialPosition();
-    Car2 car3(true, 2, 0, 500, position[0], position[1]);
+    Car car3(true, 2, 0, 500, position[0], position[1]);
     cars.emplace_back(car3);
     carId = 3;
     for (int i = 0; i < 10; i++){
-        Car2 carN(false, carId++, 0, sleepDist(mt), longStart + 1, shortStart);
+        Car carN(false, carId++, 0, sleepDist(mt), longStart + 1, shortStart);
         cars.emplace_back(carN);
     }
     threads.emplace_back(cars.at(0).carThread());
@@ -422,6 +412,10 @@ void checkSpace(){
             running = false;
         }
     }
+    cv1.notify_all();
+    cv2.notify_all();
+    cv3.notify_all();
+    cv4.notify_all();
 }
 
 int main() {
