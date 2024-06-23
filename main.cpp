@@ -24,6 +24,7 @@ bool dir1, dir2, dir3, dir4;
 std::condition_variable cv1, cv2, cv3, cv4;
 std::mutex mtx1, mtx2, mtx3, mtx4;
 std::mutex m1, m2, m3, m4;
+std::mutex fragmentMTX;
 
 void changeDir(std::mutex* m, std::condition_variable* cv, bool* direction){
     std::lock_guard lk(*m);
@@ -40,6 +41,18 @@ void runChangeDir(std::mutex* m, std::condition_variable* cv, bool* direction){
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepDist(mt)));
         changeDir(m, cv, direction);
     }
+}
+
+int carInFragment;
+
+static void getIntoFragment(int id){
+    fragmentMTX.lock();
+    carInFragment = id;
+}
+
+static void leaveFragment(){
+    fragmentMTX.unlock();
+    carInFragment = -1;
 }
 
 class Crossroad{
@@ -141,13 +154,13 @@ public:
                         while (dir1 != constant && running) {
                             cv1.wait(lk);
                         }
-                        crossroads[0].getIntoCrossroad(id);
+//                        crossroads[0].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
                         std::unique_lock lk(m3);
                         while (dir3 != constant && running) {
                             cv3.wait(lk);
                         }
-                        crossroads[2].getIntoCrossroad(id);
+//                        crossroads[2].getIntoCrossroad(id);
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
@@ -155,26 +168,26 @@ public:
                         while (dir2 != constant && running) {
                             cv2.wait(lk);
                         }
-                        crossroads[1].getIntoCrossroad(id);
+//                        crossroads[1].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
                         std::unique_lock lk(m4);
                         while (dir4 != constant && running) {
                             cv4.wait(lk);
                         }
-                        crossroads[3].getIntoCrossroad(id);
+//                        crossroads[3].getIntoCrossroad(id);
                     }
                 }
                 if (rowPos == shortStart){
                     if (colPos == shortStart){
-                        crossroads[0].leaveCrossroad();
+//                        crossroads[0].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        crossroads[2].leaveCrossroad();
+//                        crossroads[2].leaveCrossroad();
                     }
                 } else if (rowPos == shortEnd){
                     if (colPos == shortStart){
-                        crossroads[1].leaveCrossroad();
+//                        crossroads[1].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        crossroads[3].leaveCrossroad();
+//                        crossroads[3].leaveCrossroad();
                     }
                 }
                 colPos = nextCol;
@@ -233,13 +246,13 @@ public:
                         while (dir1 != constant && running) {
                             cv1.wait(lk);
                         }
-                        crossroads[0].getIntoCrossroad(id);
+//                        crossroads[0].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
                         std::unique_lock lk(m2);
                         while (dir2 != constant && running) {
                             cv2.wait(lk);
                         }
-                        crossroads[1].getIntoCrossroad(id);
+//                        crossroads[1].getIntoCrossroad(id);
                     }
                 } else if (nextRow == shortEnd){
                     if (nextCol == shortStart){
@@ -247,30 +260,35 @@ public:
                         while (dir3 != constant && running) {
                             cv3.wait(lk);
                         }
-                        crossroads[2].getIntoCrossroad(id);
+                        leaveFragment();
+//                        crossroads[2].getIntoCrossroad(id);
                     } else if (nextCol == shortEnd){
+                        getIntoFragment(id);
                         std::unique_lock lk(m4);
                         while (dir4 != constant && running) {
                             cv4.wait(lk);
                         }
-                        crossroads[3].getIntoCrossroad(id);
+//                        crossroads[3].getIntoCrossroad(id);
                     }
                 }
                 if (rowPos == shortStart){
                     if (colPos == shortStart){
-                        crossroads[0].leaveCrossroad();
+//                        crossroads[0].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        crossroads[1].leaveCrossroad();
+//                        crossroads[1].leaveCrossroad();
                     }
                 } else if (rowPos == shortEnd){
                     if (colPos == shortStart){
-                        crossroads[2].leaveCrossroad();
+//                        crossroads[2].leaveCrossroad();
                     } else if (colPos == shortEnd){
-                        crossroads[3].leaveCrossroad();
+//                        crossroads[3].leaveCrossroad();
                     }
                 }
                 rowPos = nextRow;
                 colPos = nextCol;
+            }
+            if (carInFragment == id){
+                fragmentMTX.unlock();
             }
         }
     }
