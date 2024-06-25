@@ -4,7 +4,7 @@
  * tylko jednego kierunku, po czasie kierunek się zmienia
  *
  * Etap 3
- * Na dolnym odcinku poziomego toru nie może być więcej niż jeden pojazd
+ * Pomiędzy skrzyżowaniami na dolnym odcinku poziomego toru nie może być więcej niż jeden pojazd
  */
 
 #include <iostream>
@@ -311,6 +311,7 @@ std::vector<Car> cars;
 
 void redraw(){
     while (running) {
+        curs_set(0);
         mvprintw(longStart, shortStart, "@");
         mvprintw(longStart, shortEnd, "@");
         mvprintw(longEnd, shortStart, "@");
